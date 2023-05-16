@@ -1,7 +1,7 @@
 // arduino .ino file for implementing UTCU
 
 // library includes
-#include "Wire.h" // wire for serial
+#include "Wire.h"
 
 #define AZ 'A';
 #define BAZ 'J';
@@ -14,12 +14,7 @@
 #define BDW6 'H';
 #define ADWA1 'I';
 
-int shift(int dpsk, int data)
-{
-    return dpsk ^ data;
-}
-
-// 50 ms/deg
+// 50 us/deg
 enum scanlimit 
 {
     AZ_limit = 124, 
@@ -27,21 +22,23 @@ enum scanlimit
     BAZ_limit = 84,
 };
 
-int az_delay = (scanlimit::AZ_limit*50)/1000;
-int baz_delay = (scanlimit::BAZ_limit*50)/1000;
-int el_delay = (scanlimit::EL_limit*50)/1000;
-
 // signals (pins)
 int tx_en = 13;
 int to_fro = 12;    // bit to determine
 int sb_start = 11;
+// antsel3 is MSB
 int antsel1 = 10;    // antenna select has 3 bits to determine the antenna selected
 int antsel2 = 9;
 int antsel3 = 7;
 int antsel_rd = 5; // antenna select read to read the antenna bits once the antenna is to be selected
 int dpsk = 0;       // dpsk bit to send serially
-int dt = .064; // throttled delay (64ns)
-int ds = 20*dt; // scaled delay
+int dpsk_pin = 2;
+int scale = 18;
+float dt = .064; // throttled delay (64us)
+float ds = scale*dt; // scaled delay
+int az_delay = ((scanlimit::AZ_limit*50)/1000)*scale;
+int baz_delay = ((scanlimit::BAZ_limit*50)/1000)*scale;
+int el_delay = ((scanlimit::EL_limit*50)/1000)*scale;
 
 // HARD CODED FUNCTION
 char function = AZ;
@@ -72,78 +69,130 @@ void setup()
     pinMode(antsel2, OUTPUT);
     pinMode(antsel3, OUTPUT);
     pinMode(antsel_rd, OUTPUT);
-
-    // set the baud rate -- 115200 
+    pinMode(dpsk_pin, OUTPUT);
     Serial.begin(115200);
+}
+
+void loci()
+{
+    // left oci - 001 (1)
+    digitalWrite(antsel1, HIGH);
+    digitalWrite(antsel2, LOW);
+    digitalWrite(antsel3, LOW);
+}
+
+void boci()
+{
+    // read(back) oci - 010 (2)
+    digitalWrite(antsel1, LOW);
+    digitalWrite(antsel2, HIGH);
+    digitalWrite(antsel3, LOW);
+}
+
+void roci()
+{
+    // right oci - 011 (3)
+    digitalWrite(antsel1, HIGH);
+    digitalWrite(antsel2, HIGH);
+    digitalWrite(antsel3, LOW);
+}
+
+void sboci()
+{
+    // sb oci - 100 (4)
+    digitalWrite(antsel1, LOW);
+    digitalWrite(antsel2, LOW);
+    digitalWrite(antsel3, HIGH);
+}
+
+void offoci()
+{
+    // turns oci off - 101 (5)
+    digitalWrite(antsel1, HIGH);
+    digitalWrite(antsel2, LOW);
+    digitalWrite(antsel3, HIGH);
+}
+
+int shift(int dpsk, int data)
+{
+    int new_dpsk = dpsk ^ data;
+    Serial.print(new_dpsk);
+    if (new_dpsk == 1)
+    {
+        digitalWrite(dpsk_pin, HIGH);
+    } else
+    {
+        digitalWrite(dpsk_pin, LOW);
+    }
+    return new_dpsk; // return dpsk bit for logic
 }
 
 // pause time in annex 10
 // function to transmit az
 void transmit_az(char function)
 {
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
+    Serial.print("Tx enabled");
     if (function == 'A')
     {
+        Serial.print("printing 0's\n");
         // for loop that sends pre-data 0's
         for (int i = 0; i < 13;i++) 
         {
-            Serial.print(0); // double check this data type
-            delay(dt);
+            dpsk = shift(0, 0); 
+            delay(ds);
         }
+        Serial.print("printing barker\n");
         // for loop to shift and send barker code
         for (int i = 0;i < 5;i++)
         {
             dpsk = shift(dpsk, barker[i]);
-            Serial.print(dpsk);
-            delay(dt);
+            delay(ds);
         }
+        Serial.print("sending function\n");
         // sends function for AZ
         for (int i = 0; i < 7;i++)
         {
             dpsk = shift(dpsk, az[i]);
-            Serial.print(dpsk);
-            delay(dt);
+            delay(ds);
         }
+        Serial.print("delaying\n");
         delay(az_delay);
+
         // after az send, antenna select and start scanning beam
-        // LOCI
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
-        delay(dt); // delay for clock strobe
-        // ROCI
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, HIGH);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
-        // BOCI
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, HIGH);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
+        Serial.print("loci\n");
+        loci();
+        delay(ds); // delay for clock strobe
+        Serial.print("boci\n");
+        boci();
+        delay(ds);
+        Serial.print("roci\n");
+        roci();
+        delay(ds);
+        Serial.print("offoci\n");
         // off
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
-        // whatever this is
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, HIGH);
+        offoci();
+        delay(ds);
 
         // start scanning beam
+        Serial.print("setting sb high");
         digitalWrite(sb_start, HIGH);
         digitalWrite(to_fro, HIGH);
         delay(az_delay); 
         digitalWrite(tx_en, LOW);
         digitalWrite(sb_start, LOW);
-        delay(.6); // 600 us pause
+        Serial.print("setting sb low");
+        delay(.6*scale); // 600 us pause
         digitalWrite(sb_start, HIGH);
+        Serial.print("setting sb high");
         digitalWrite(tx_en, HIGH);
+        Serial.print("Tx enabled");
         digitalWrite(to_fro, LOW);
         delay(az_delay); 
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
+        digitalWrite(sb_start, LOW);
+        Serial.print("setting sb low");
+        offoci();
         digitalWrite(tx_en, LOW);
     }
     else
@@ -151,85 +200,78 @@ void transmit_az(char function)
         // just transmit 0s for AZ send
         for (int i = 0; i < 74;i++) 
         {
-            Serial.print(0);
-            delay(dt);
+            dpsk = shift(0, 0);
+            delay(ds);
         }
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 }
 
 // function to transmit baz
 void transmit_baz(char function)
 {
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
+    Serial.print("Tx enabled");
     if (function == 'J')
     {
         // for loop that sends pre-data 0's
         for (int i = 0; i < 13;i++) 
         {
-            Serial.print(0); // double check this data type
-            delay(dt);
+            dpsk = shift(0, 0); // double check this data type
+            delay(ds);
         }
         // for loop to shift and send barker code
         for (int i = 0;i < 5;i++)
         {
             dpsk = shift(dpsk, barker[i]);
-            Serial.print(dpsk);
-            delay(dt);
+            delay(ds);
         }
         // sends function for BAZ
         for (int i = 0; i < 7;i++)
         {
             dpsk = shift(dpsk, baz[i]);
-            Serial.print(dpsk);
-            delay(dt);
+            delay(ds);
         }
+        delay(baz_delay);
 
         // ignoring this basic data word send
         /*for (int i = 0; i < 7;i++)
         {
             dpsk = shift(dpsk, bdw1[i]);
-            Serial.print(dpsk);
-            delay(dt);
+            tx.print(dpsk);
+            delay(ds);
         }*/
 
         // after az send, antenna select and start scanning beam
         // LOCI
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
-        delay(dt); // delay for clock strobe
-        // ROCI
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, HIGH);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
-        // BOCI
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, HIGH);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
+        loci();
+        delay(ds); // delay for clock strobe
+
+        roci();
+        delay(ds);
+        
+        boci();
+        delay(ds);
+        
         // off
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
-        // whatever this is
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, HIGH);
+        offoci();
+        delay(ds);
         // start scanning beam
         digitalWrite(sb_start, HIGH);
         digitalWrite(to_fro, HIGH);
         delay(baz_delay); 
         digitalWrite(tx_en, LOW);
         digitalWrite(sb_start, LOW);
-        delay(.6); // 600us pause
+        delay(.6*scale); // 600us pause
         digitalWrite(sb_start, HIGH);
         digitalWrite(tx_en, HIGH);
+        Serial.print("Tx enabled");
         digitalWrite(to_fro, LOW);
         delay(baz_delay); 
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
+        digitalWrite(sb_start, LOW);
+        offoci();
         digitalWrite(tx_en, LOW);
     }
     else
@@ -237,75 +279,68 @@ void transmit_baz(char function)
         // just transmit 0s for BAZ send
         for (int i = 0; i < 32;i++) 
         {
-            Serial.print(0);
-            delay(dt);
+            dpsk = shift(0, 0);
+            delay(ds);
         }
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 }
 
 // function to transmit el
 void transmit_el(char function)
 {
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
+    Serial.print("Tx enabled");
     if (function == 'E')
     {
         // for loop that sends pre-data 0's
         for (int i = 0; i < 13;i++) 
         {
-            Serial.print(0); // double check this data type
-            delay(dt);
+            dpsk = shift(0, 0); // double check this data type
+            delay(ds);
         }
         // for loop to shift and send barker code
         for (int i = 0;i < 5;i++)
         {
             dpsk = shift(dpsk, barker[i]);
-            Serial.print(dpsk);
-            delay(dt);
+            delay(ds);
         }
         // sends function for EL
         for (int i = 0; i < 7;i++)
         {
             dpsk = shift(dpsk, el[i]);
-            Serial.print(dpsk);
-            delay(dt);
+            delay(ds);
         }
-        // LOCI - off for EL
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
-        delay(dt); // delay for clock strobe
-        // ROCI
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, HIGH);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
-        // BOCI
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, HIGH);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
+        delay(el_delay);
+
+        // rear oci
+        boci();
+        delay(ds);
+        
         // off
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
-        delay(dt);
-        // whatever this is
-        digitalWrite(antsel1, HIGH);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, HIGH);
+        offoci();
+        delay(ds);
+
         // start scanning beam
+        Serial.print("setting sb high");
         digitalWrite(sb_start, HIGH);
         digitalWrite(to_fro, HIGH);
         delay(el_delay); 
         digitalWrite(tx_en, LOW);
         digitalWrite(sb_start, LOW);
-        delay(.4); // 400 us pause
+        Serial.print("setting sb low");
+        delay(.4*scale); // 600 us pause
         digitalWrite(sb_start, HIGH);
+        Serial.print("setting sb high");
         digitalWrite(tx_en, HIGH);
+        Serial.print("Tx enabled");
         digitalWrite(to_fro, LOW);
         delay(el_delay); 
-        digitalWrite(antsel1, LOW);
-        digitalWrite(antsel2, LOW);
-        digitalWrite(antsel3, LOW);
+        digitalWrite(sb_start, LOW);
+        Serial.print("setting sb low");
+        offoci();
         digitalWrite(tx_en, LOW);
     }
     else
@@ -313,90 +348,118 @@ void transmit_el(char function)
         // just transmit 0s for EL send
         for (int i = 0; i < 25;i++) 
         {
-            Serial.print(0);
-            delay(dt);
+            dpsk = shift(0, 0);
+            delay(ds);
         }
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 }
 
 // SEQ1 send
 void SEQ1(char function)
 {
-    tx_en = 1;
+    Serial.print("\nSending el\n");
     transmit_el(function);
     
+    Serial.print("\nSEQ1: sending bdw1\n");
     // send bdw1
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
     for (int i = 0; i < 7;i++)
     {
         dpsk = shift(dpsk, bdw1[i]);
-        Serial.print(dpsk);
-        delay(dt);
+        delay(ds);
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 
+    Serial.print("\nSending azimuth\n");
     transmit_az(function);
     
+    Serial.print("\nSending bdw2\n");
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
     for (int i = 0; i < 7;i++)
     {
         dpsk = shift(dpsk, bdw2[i]);
-        Serial.print(dpsk);
-        delay(dt);
+        delay(ds);
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 
+    Serial.print("\nSending el\n");
     transmit_el(function);
 
+    Serial.print("\nSending BAZ\n");
     transmit_baz(function);
 
     // note 2 (ignoring for now)
-
+    Serial.print("\nSending EL\n");
     transmit_el(function);
 
+    Serial.print("\nSending bdw3\n");
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
     for (int i = 0; i < 7;i++)
     {
         dpsk = shift(dpsk, bdw3[i]);
-        Serial.print(dpsk);
-        delay(dt);
+        delay(ds);
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 }
 
 // SEQ2 send
 void SEQ2(char function)
 {
-    tx_en = 1;
     transmit_el(function);
     
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
     for (int i = 0; i < 7;i++)
     {
         dpsk = shift(dpsk, bdw4[i]);
-        Serial.print(dpsk);
-        delay(dt);
+        delay(ds);
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 
     transmit_az(function);
     
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
     for (int i = 0; i < 7;i++)
     {
         dpsk = shift(dpsk, bdw5[i]);
-        Serial.print(dpsk);
-        delay(dt);
+        delay(ds);
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 
     transmit_el(function);
 
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
     for (int i = 0; i < 7;i++)
     {
         dpsk = shift(dpsk, adwa1[i]);
-        Serial.print(dpsk);
-        delay(dt);
+        delay(ds);
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 
     transmit_el(function);
 
+    digitalWrite(tx_en, HIGH);
+    //delay(ds);
     for (int i = 0; i < 7;i++)
     {
         dpsk = shift(dpsk, bdw6[i]);
-        Serial.print(dpsk);
-        delay(dt);
+        delay(ds);
     }
+    digitalWrite(tx_en, LOW);
+    //delay(ds);
 }
 
 void loop() 
@@ -405,21 +468,21 @@ void loop()
     {
         // full cycle
         SEQ1(function);
-        delay(1); // double check that this is ms
+        delay(1*scale); // double check that this is ms
         SEQ2(function);
-        delay(13);
+        delay(13*scale);
         SEQ1(function);
-        delay(19);
+        delay(19*scale);
         SEQ2(function);
-        delay(2);
+        delay(2*scale);
         SEQ1(function);
-        delay(20);
+        delay(20*scale);
         SEQ2(function);
-        delay(6);
+        delay(6*scale);
         SEQ1(function);
         SEQ2(function);
-        delay(18);
+        delay(18*scale);
     }
-    message_sent = true;
-    delay(dt);
+    message_sent = false;
+    Serial.print("\nFinished run!!!\n");
 }
