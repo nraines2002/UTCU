@@ -4,15 +4,8 @@
 #include "Wire.h"
 
 #define AZ 'A';
-#define BAZ 'J';
+#define BAZ 'B';
 #define EL 'E';
-#define BDW1 'B';
-#define BDW2 'C';
-#define BDW3 'D';
-#define BDW4 'F';
-#define BDW5 'G';
-#define BDW6 'H';
-#define ADWA1 'I';
 
 // 50 us/deg
 enum scanlimit 
@@ -39,6 +32,8 @@ float ds = scale*dt; // scaled delay
 int az_delay = ((scanlimit::AZ_limit*50)/1000)*scale;
 int baz_delay = ((scanlimit::BAZ_limit*50)/1000)*scale;
 int el_delay = ((scanlimit::EL_limit*50)/1000)*scale;
+unsigned long t_o = 0;
+unsigned long t_d = 0;
 
 // HARD CODED FUNCTION
 char function = AZ;
@@ -131,9 +126,11 @@ int shift(int dpsk, int data)
 // function to transmit az
 void transmit_az(char function)
 {
+    Serial.print("\nAz began\n");
     digitalWrite(tx_en, HIGH);
+    t_o = millis();
     //delay(ds);
-    Serial.print("Tx enabled");
+    //Serial.print("Tx enabled");
     if (function == 'A')
     {
         Serial.print("printing 0's\n");
@@ -142,20 +139,29 @@ void transmit_az(char function)
         {
             dpsk = shift(0, 0); 
             delay(ds);
+            t_d = millis() - t_o; 
+            Serial.print("\nbit sent:%d", t_d);
         }
+        t_d = millis() - t_o;
+        Serial.print("\npre-data 0's done:%d", t_d);
         Serial.print("printing barker\n");
         // for loop to shift and send barker code
         for (int i = 0;i < 5;i++)
         {
             dpsk = shift(dpsk, barker[i]);
             delay(ds);
+            t_d = millis() - t_o;
+            Serial.print("\nbit sent:%d", t_d);
         }
+        Serial.print("\nbarker done:%d", t_d);
         Serial.print("sending function\n");
         // sends function for AZ
         for (int i = 0; i < 7;i++)
         {
             dpsk = shift(dpsk, az[i]);
             delay(ds);
+            t_d = millis() - t_o;
+            Serial.print("\nbit sent:%d", t_d);
         }
         Serial.print("delaying\n");
         delay(az_delay);
@@ -214,7 +220,7 @@ void transmit_baz(char function)
     digitalWrite(tx_en, HIGH);
     //delay(ds);
     Serial.print("Tx enabled");
-    if (function == 'J')
+    if (function == 'B')
     {
         // for loop that sends pre-data 0's
         for (int i = 0; i < 13;i++) 
@@ -365,11 +371,21 @@ void SEQ1(char function)
     Serial.print("\nSEQ1: sending bdw1\n");
     // send bdw1
     digitalWrite(tx_en, HIGH);
-    //delay(ds);
-    for (int i = 0; i < 7;i++)
+    if (function != "E")
     {
-        dpsk = shift(dpsk, bdw1[i]);
-        delay(ds);
+        //delay(ds);
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, bdw1[i]);
+            delay(ds);
+        }
+    } else { // dont transmit bdw1 during el 
+        //delay(ds);
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, 0);
+            delay(ds);
+        }
     }
     digitalWrite(tx_en, LOW);
     //delay(ds);
@@ -379,11 +395,19 @@ void SEQ1(char function)
     
     Serial.print("\nSending bdw2\n");
     digitalWrite(tx_en, HIGH);
-    //delay(ds);
-    for (int i = 0; i < 7;i++)
-    {
-        dpsk = shift(dpsk, bdw2[i]);
-        delay(ds);
+    if (function != 'E')
+    {    
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, bdw2[i]);
+            delay(ds);
+        }
+    } else {
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, 0);
+            delay(ds);
+        }
     }
     digitalWrite(tx_en, LOW);
     //delay(ds);
@@ -400,11 +424,20 @@ void SEQ1(char function)
 
     Serial.print("\nSending bdw3\n");
     digitalWrite(tx_en, HIGH);
-    //delay(ds);
-    for (int i = 0; i < 7;i++)
+    if (function != 'E')
     {
-        dpsk = shift(dpsk, bdw3[i]);
-        delay(ds);
+        //delay(ds);
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, bdw3[i]);
+            delay(ds);
+        }
+    } else {
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, 0);
+            delay(ds);
+        }
     }
     digitalWrite(tx_en, LOW);
     //delay(ds);
@@ -416,11 +449,20 @@ void SEQ2(char function)
     transmit_el(function);
     
     digitalWrite(tx_en, HIGH);
-    //delay(ds);
-    for (int i = 0; i < 7;i++)
+    if (function != 'E')
     {
-        dpsk = shift(dpsk, bdw4[i]);
-        delay(ds);
+    //delay(ds);
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, bdw4[i]);
+            delay(ds);
+        }
+    } else {
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, 0);
+            delay(ds);
+        }
     }
     digitalWrite(tx_en, LOW);
     //delay(ds);
@@ -429,10 +471,19 @@ void SEQ2(char function)
     
     digitalWrite(tx_en, HIGH);
     //delay(ds);
-    for (int i = 0; i < 7;i++)
+    if (function != 'E')
     {
-        dpsk = shift(dpsk, bdw5[i]);
-        delay(ds);
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, bdw5[i]);
+            delay(ds);
+        }
+    } else {
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, 0);
+            delay(ds);
+        }
     }
     digitalWrite(tx_en, LOW);
     //delay(ds);
@@ -441,10 +492,19 @@ void SEQ2(char function)
 
     digitalWrite(tx_en, HIGH);
     //delay(ds);
-    for (int i = 0; i < 7;i++)
+    if (function == 'A')
     {
-        dpsk = shift(dpsk, adwa1[i]);
-        delay(ds);
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, adwa1[i]);
+            delay(ds);
+        }
+    } else if {
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, 0);
+            delay(ds);
+        }
     }
     digitalWrite(tx_en, LOW);
     //delay(ds);
@@ -453,10 +513,19 @@ void SEQ2(char function)
 
     digitalWrite(tx_en, HIGH);
     //delay(ds);
-    for (int i = 0; i < 7;i++)
+    if (function != 'E')
     {
-        dpsk = shift(dpsk, bdw6[i]);
-        delay(ds);
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, bdw6[i]);
+            delay(ds);
+        }
+    } else if {
+        for (int i = 0; i < 7;i++)
+        {
+            dpsk = shift(dpsk, 0);
+            delay(ds);
+        }
     }
     digitalWrite(tx_en, LOW);
     //delay(ds);
